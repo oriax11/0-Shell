@@ -1,5 +1,6 @@
 use crate::pwd;
 use crate::cd;
+use crate::ls;
 use regex::Regex;
 
 
@@ -25,6 +26,7 @@ pub fn parse_data(line: &str) {
             "echo" => println!("{}", rest.join(" ")),
             "pwd" => pwd::handle_pwd(rest),
             "cd" =>  cd::handle_cd(rest),
+            "ls" =>  ls::handle_ls(rest),
             _ => println!("Command '{}' not found", cmd),
         }
     }
