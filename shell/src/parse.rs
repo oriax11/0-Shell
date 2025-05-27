@@ -1,4 +1,5 @@
 use crate::pwd;
+use crate::cd;
 use regex::Regex;
 
 
@@ -23,6 +24,7 @@ pub fn parse_data(line: &str) {
         match cmd.as_str() {
             "echo" => println!("{}", rest.join(" ")),
             "pwd" => pwd::handle_pwd(rest),
+            "cd" =>  cd::handle_cd(rest),
             _ => println!("Command '{}' not found", cmd),
         }
     }
