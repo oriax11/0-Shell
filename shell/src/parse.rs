@@ -1,4 +1,6 @@
+use crate::pwd;
 use regex::Regex;
+
 
 fn remove_quotes(arg: &str) -> &str {
     let re = Regex::new(r#"^(['"])(.*)['"]$"#).unwrap();
@@ -17,6 +19,12 @@ pub fn parse_data(line: &str) {
     let input = line.trim();
     let raw_args: Vec<&str> = input.split_whitespace().collect();
     let args : Vec<String> = raw_args.iter().map(|a| remove_quotes(a).to_string()).collect();
+    if let Some((cmd, rest)) = args.split_first() {
+        match cmd.as_str() {
+            "echo" => println!("{}", rest.join(" ")),
+            "pwd" => pwd::handle_pwd(rest),
+            _ => println!("Command '{}' not found", cmd),
+        }
+    }
 
-    println!("Tous les args: {:?}", args);
 }
