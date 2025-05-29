@@ -3,6 +3,7 @@ mod pwd;
 mod cd;
 mod ls;
 mod command;
+mod cat;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 

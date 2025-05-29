@@ -2,6 +2,7 @@ use crate::pwd;
 use crate::cd;
 use crate::ls;
 use crate::command;
+use crate::cat;
 use regex::Regex;
 
 
@@ -28,6 +29,7 @@ pub fn parse_data(line: &str) {
             "pwd" => pwd::handle_pwd(rest),
             "cd" =>  cd::handle_cd(rest),
             "ls" =>  ls::handle_ls(rest),
+            "cat" =>  cat::handle_cat(rest),
             _ => command::handle_command(cmd, rest),
             // _ => println!("Command '{}' not found", cmd),
         }
