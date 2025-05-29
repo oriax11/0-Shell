@@ -3,6 +3,7 @@ use crate::cd;
 use crate::ls;
 use crate::command;
 use crate::cat;
+use std::process;
 use regex::Regex;
 
 
@@ -30,8 +31,8 @@ pub fn parse_data(line: &str) {
             "cd" =>  cd::handle_cd(rest),
             "ls" =>  ls::handle_ls(rest),
             "cat" =>  cat::handle_cat(rest),
+            "exit" =>  process::exit(0),
             _ => command::handle_command(cmd, rest),
-            // _ => println!("Command '{}' not found", cmd),
         }
     }
 
