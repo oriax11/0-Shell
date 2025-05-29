@@ -2,6 +2,7 @@ mod parse;
 mod pwd;
 mod cd;
 mod ls;
+mod command;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
