@@ -54,7 +54,6 @@ fn main() {
             "mv" => commands::mv::execute(&args),
             "mkdir" => commands::mkdir::execute(&args),
             "rm" => commands::rm::execute(&args),
-            "help" => commands::help::execute(),
             _ => {
                 if !command.is_empty() {
                     let mut cmd = Command::new(command);
