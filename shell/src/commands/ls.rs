@@ -15,7 +15,8 @@ struct EntryInfo {
 fn parse_flags<'a>(args: &'a [&str]) -> (Vec<char>, Vec<&'a str>) {
     let mut flags = Vec::new();
     let mut paths = Vec::new();
-    for arg in args {
+
+    for arg in args.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         if arg.starts_with('-') {
             for c in arg.chars().skip(1) {
                 if !flags.contains(&c) {
@@ -23,9 +24,10 @@ fn parse_flags<'a>(args: &'a [&str]) -> (Vec<char>, Vec<&'a str>) {
                 }
             }
         } else {
-            paths.push(*arg);
+            paths.push(arg);
         }
     }
+
     (flags, paths)
 }
 
@@ -33,7 +35,7 @@ pub fn execute(rest: &[&str]) {
     let (flags, mut paths) = parse_flags(rest);
 
     // Check for invalid flags
-    let valid_flags = ['a', 'l', 'H'];
+    let valid_flags = ['a', 'l', 'F'];
     if let Some(invalid_flag) = flags.iter().find(|f| !valid_flags.contains(f)) {
         println!("Command '-{}' not found", invalid_flag);
         return;
@@ -54,17 +56,26 @@ pub fn execute(rest: &[&str]) {
         // Handle . and .. for -a flag
         if flags.contains(&'a') {
             if let Ok(meta) = fs::symlink_metadata(path) {
+                let mut display_name = ".".to_string();
+                if flags.contains(&'F') {
+                    display_name.push('/');
+                }
                 entries_info.push(EntryInfo {
                     name: ".".to_string(),
-                    display_name: ".".to_string(),
+                    display_name,
                     metadata: meta,
                 });
             }
+
             let parent_path = path.join("..");
             if let Ok(meta) = fs::symlink_metadata(&parent_path) {
+                let mut display_name = "..".to_string();
+                if flags.contains(&'F') {
+                    display_name.push('/');
+                }
                 entries_info.push(EntryInfo {
                     name: "..".to_string(),
-                    display_name: "..".to_string(),
+                    display_name,
                     metadata: meta,
                 });
             }
@@ -87,10 +98,24 @@ pub fn execute(rest: &[&str]) {
                 continue;
             }
 
-            if let Ok(metadata) = fs::symlink_metadata(entry.path()) {
+            let path = entry.path();
+            if let Ok(metadata) = fs::symlink_metadata(&path) {
+                let mut display_name = file_name.clone();
+
+                if flags.contains(&'F') {
+                    let file_type = metadata.file_type();
+                    if file_type.is_dir() {
+                        display_name.push('/');
+                    } else if file_type.is_symlink() {
+                        display_name.push('@');
+                    } else if (metadata.mode() & 0o111) != 0 {
+                        display_name.push('*');
+                    }
+                }
+
                 entries_info.push(EntryInfo {
                     name: file_name.clone(),
-                    display_name: file_name,
+                    display_name,
                     metadata,
                 });
             }
@@ -103,10 +128,10 @@ pub fn execute(rest: &[&str]) {
                 .iter()
                 .map(|info| info.metadata.blocks())
                 .sum();
-            println!("total {}", total_blocks / 2);
+            println!("total {}", total_blocks / 2); // Convert 512B blocks to 1K
 
             for info in &entries_info {
-                print_long_listing(&info.name, &info.metadata);
+                print_long_listing(&info.name, &info.metadata, flags.contains(&'F'));
             }
         } else {
             let display_names: Vec<String> =
@@ -116,7 +141,7 @@ pub fn execute(rest: &[&str]) {
     }
 }
 
-fn print_long_listing(name: &str, metadata: &fs::Metadata) {
+fn print_long_listing(name: &str, metadata: &fs::Metadata, show_indicator: bool) {
     let perms = permissions_string(metadata);
     let nlink = metadata.nlink();
 
@@ -148,10 +173,20 @@ fn print_long_listing(name: &str, metadata: &fs::Metadata) {
     let date = datetime.format("%b %d %H:%M");
 
     let mut display_name = name.to_string();
+
     if metadata.file_type().is_symlink() {
         if let Ok(target) = fs::read_link(name) {
             display_name.push_str(" -> ");
             display_name.push_str(&target.to_string_lossy());
+        }
+    } else if show_indicator {
+        let file_type = metadata.file_type();
+        if file_type.is_dir() {
+            display_name.push('/');
+        } else if file_type.is_symlink() {
+            display_name.push('@');
+        }else if (metadata.mode() & 0o111) != 0 {
+            display_name.push('*');
         }
     }
 
@@ -165,7 +200,6 @@ fn permissions_string(metadata: &fs::Metadata) -> String {
     let mut perms = String::new();
     let mode = metadata.mode();
 
-    // File type
     perms.push(
         if metadata.file_type().is_symlink() {
             'l'

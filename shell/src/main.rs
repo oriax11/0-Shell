@@ -39,7 +39,7 @@ fn main() {
             break;
         }
 
-        let mut parts = input.trim().split_whitespace();
+        let mut parts = input.trim().split(" ");
         let command = parts.next().unwrap_or("").trim_matches('"').trim_matches('\'');
         let args: Vec<&str> = parts.collect();
 
