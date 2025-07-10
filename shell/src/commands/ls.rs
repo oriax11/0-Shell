@@ -32,11 +32,11 @@ fn parse_flags<'a>(args: &'a [&str]) -> (Vec<char>, Vec<&'a str>) {
 pub fn execute(rest: &[&str]) {
     let (flags, mut paths) = parse_flags(rest);
 
-    // check for invalid flags:
-    let valid_flags = ['a','l', 'H'];
+    // Check for invalid flags
+    let valid_flags = ['a', 'l', 'H'];
     if let Some(invalid_flag) = flags.iter().find(|f| !valid_flags.contains(f)) {
-         println!("Command '-{}' not found", invalid_flag);
-         return;
+        println!("Command '-{}' not found", invalid_flag);
+        return;
     }
 
     if paths.is_empty() {
@@ -53,26 +53,18 @@ pub fn execute(rest: &[&str]) {
 
         // Handle . and .. for -a flag
         if flags.contains(&'a') {
-            if let Ok(meta) = fs::metadata(path) {
-                let mut display_name = ".".to_string();
-                if flags.contains(&'F') && meta.is_dir() {
-                    display_name.push('/');
-                }
+            if let Ok(meta) = fs::symlink_metadata(path) {
                 entries_info.push(EntryInfo {
                     name: ".".to_string(),
-                    display_name,
+                    display_name: ".".to_string(),
                     metadata: meta,
                 });
             }
             let parent_path = path.join("..");
-            if let Ok(meta) = fs::metadata(&parent_path) {
-                let mut display_name = "..".to_string();
-                if flags.contains(&'F') && meta.is_dir() {
-                    display_name.push('/');
-                }
+            if let Ok(meta) = fs::symlink_metadata(&parent_path) {
                 entries_info.push(EntryInfo {
                     name: "..".to_string(),
-                    display_name,
+                    display_name: "..".to_string(),
                     metadata: meta,
                 });
             }
@@ -95,16 +87,10 @@ pub fn execute(rest: &[&str]) {
                 continue;
             }
 
-            if let Ok(metadata) = entry.metadata() {
-                let mut display_name = file_name.clone();
-                if flags.contains(&'F') {
-                    if metadata.is_dir() {
-                        display_name.push('/');
-                    }
-                }
+            if let Ok(metadata) = fs::symlink_metadata(entry.path()) {
                 entries_info.push(EntryInfo {
-                    name: file_name,
-                    display_name,
+                    name: file_name.clone(),
+                    display_name: file_name,
                     metadata,
                 });
             }
@@ -117,13 +103,14 @@ pub fn execute(rest: &[&str]) {
                 .iter()
                 .map(|info| info.metadata.blocks())
                 .sum();
-            println!("total {}", total_blocks / 2); // Convert 512-byte blocks to 1KB
+            println!("total {}", total_blocks / 2);
 
             for info in &entries_info {
-                print_long_listing(&info.display_name, &info.metadata);
+                print_long_listing(&info.name, &info.metadata);
             }
         } else {
-            let display_names: Vec<String> = entries_info.iter().map(|info| info.display_name.clone()).collect();
+            let display_names: Vec<String> =
+                entries_info.iter().map(|info| info.display_name.clone()).collect();
             println!("{}", display_names.join("  "));
         }
     }
@@ -143,6 +130,7 @@ fn print_long_listing(name: &str, metadata: &fs::Metadata) {
                 .into_owned()
         }
     };
+
     let group = unsafe {
         let grgid = libc::getgrgid(metadata.gid());
         if grgid.is_null() {
@@ -159,26 +147,46 @@ fn print_long_listing(name: &str, metadata: &fs::Metadata) {
     let datetime: DateTime<Local> = mtime.into();
     let date = datetime.format("%b %d %H:%M");
 
+    let mut display_name = name.to_string();
+    if metadata.file_type().is_symlink() {
+        if let Ok(target) = fs::read_link(name) {
+            display_name.push_str(" -> ");
+            display_name.push_str(&target.to_string_lossy());
+        }
+    }
+
     println!(
         "{} {:>2} {:<8} {:<8} {:>6} {} {}",
-        perms, nlink, user, group, size, date, name
+        perms, nlink, user, group, size, date, display_name
     );
 }
 
 fn permissions_string(metadata: &fs::Metadata) -> String {
     let mut perms = String::new();
     let mode = metadata.mode();
-    //Type;
-    perms.push(if metadata.is_dir() { 'd' } else { '-' });
-    //Owner;
+
+    // File type
+    perms.push(
+        if metadata.file_type().is_symlink() {
+            'l'
+        } else if metadata.is_dir() {
+            'd'
+        } else {
+            '-'
+        },
+    );
+
+    // Owner
     perms.push(if (mode & 0o400) != 0 { 'r' } else { '-' });
     perms.push(if (mode & 0o200) != 0 { 'w' } else { '-' });
     perms.push(if (mode & 0o100) != 0 { 'x' } else { '-' });
-    //Group;
+
+    // Group
     perms.push(if (mode & 0o040) != 0 { 'r' } else { '-' });
     perms.push(if (mode & 0o020) != 0 { 'w' } else { '-' });
     perms.push(if (mode & 0o010) != 0 { 'x' } else { '-' });
-    //Others;
+
+    // Others
     perms.push(if (mode & 0o004) != 0 { 'r' } else { '-' });
     perms.push(if (mode & 0o002) != 0 { 'w' } else { '-' });
     perms.push(if (mode & 0o001) != 0 { 'x' } else { '-' });
