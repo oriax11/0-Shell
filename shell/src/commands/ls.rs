@@ -105,6 +105,12 @@ pub fn execute(rest: &[&str]) {
         entries_info.sort_by(|a, b| a.name.cmp(&b.name));
 
         if flags.contains(&'l') {
+            let total_blocks: u64 = entries_info
+                .iter()
+                .map(|info| info.metadata.blocks())
+                .sum();
+            println!("total {}", total_blocks / 2); // Convert 512-byte blocks to 1KB
+
             for info in &entries_info {
                 print_long_listing(&info.display_name, &info.metadata);
             }
