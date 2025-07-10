@@ -31,6 +31,14 @@ fn parse_flags<'a>(args: &'a [&str]) -> (Vec<char>, Vec<&'a str>) {
 
 pub fn execute(rest: &[&str]) {
     let (flags, mut paths) = parse_flags(rest);
+
+    // check for invalid flags:
+    let valid_flags = ['a','l', 'H'];
+    if let Some(invalid_flag) = flags.iter().find(|f| !valid_flags.contains(f)) {
+         println!("Command '-{}' not found", invalid_flag);
+         return;
+    }
+
     if paths.is_empty() {
         paths.push(".");
     }
