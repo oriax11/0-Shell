@@ -1,21 +1,25 @@
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 
 pub fn handle_command(cmd: &str, rest: &[String]) {
-    let output = Command::new(cmd)
+    let child = Command::new(cmd)
         .args(rest)
-        .output();
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
 
-    match output {
-        Ok(output) => {
-            if !output.stdout.is_empty() {
-                print!("{}", String::from_utf8_lossy(&output.stdout));
+    match child {
+        Ok(mut child) => {
+            if let Some(stdout) = child.stdout.take() {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().flatten() { // prevent infinite output
+                    println!("{}", line);
+                }
             }
-            if !output.stderr.is_empty() {
-                print!("Command '{}' not found", cmd)
-            }
+
         }
         Err(_) => {
-            println!("Command '{}' not found", cmd)
+            println!("Command '{}' not found", cmd);
         }
     }
 }

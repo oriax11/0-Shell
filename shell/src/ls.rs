@@ -2,7 +2,8 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::time::UNIX_EPOCH;
 use chrono::{DateTime, Local};
-use users::{get_user_by_uid, get_group_by_gid};
+// use users::{get_user_by_uid, get_group_by_gid}; // REMOVE THIS
+use libc; // ADD THIS
 
 fn parse_flags(args: &[String]) -> (Vec<char>, Vec<String>) {
     let mut flags = Vec::new();
@@ -91,12 +92,30 @@ pub fn handle_ls(rest: &[String]) {
                     };
                     let perms = permissions_string(&metadata);
                     let nlink = metadata.nlink();
-                    let user = get_user_by_uid(metadata.uid())
-                        .map(|u| u.name().to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "unknown".into());
-                    let group = get_group_by_gid(metadata.gid())
-                        .map(|g| g.name().to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "unknown".into());
+
+                    // --- Replacement for 'users' crate ---
+                    let user = unsafe {
+                        let pwuid = libc::getpwuid(metadata.uid());
+                        if pwuid.is_null() {
+                            "unknown".to_string()
+                        } else {
+                            std::ffi::CStr::from_ptr((*pwuid).pw_name)
+                                .to_string_lossy()
+                                .into_owned()
+                        }
+                    };
+                    let group = unsafe {
+                        let grgid = libc::getgrgid(metadata.gid());
+                        if grgid.is_null() {
+                            "unknown".to_string()
+                        } else {
+                            std::ffi::CStr::from_ptr((*grgid).gr_name)
+                                .to_string_lossy()
+                                .into_owned()
+                        }
+                    };
+                    // --- End Replacement ---
+
                     let size = metadata.len();
                     let mtime = metadata.modified().unwrap_or(UNIX_EPOCH);
                     let datetime: DateTime<Local> = mtime.into();

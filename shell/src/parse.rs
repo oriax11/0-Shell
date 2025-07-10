@@ -3,6 +3,7 @@ use crate::cd;
 use crate::ls;
 use crate::command;
 use crate::cat;
+use crate::echo;
 use std::process;
 use regex::Regex;
 
@@ -26,7 +27,7 @@ pub fn parse_data(line: &str) {
     let args : Vec<String> = raw_args.iter().map(|a| remove_quotes(a).to_string()).collect();
     if let Some((cmd, rest)) = args.split_first() {
         match cmd.as_str() {
-            "echo" => println!("{}", rest.join(" ")),
+            "echo" => echo::handle_echo(rest),
             "pwd" => pwd::handle_pwd(rest),
             "cd" =>  cd::handle_cd(rest),
             "ls" =>  ls::handle_ls(rest),
