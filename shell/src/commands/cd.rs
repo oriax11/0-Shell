@@ -11,7 +11,7 @@ pub fn execute(args: &[&str]) {
     } else {
         PathBuf::from(target)
     };
-    if let Err(e) = env::set_current_dir(&path) {
-        eprintln!("cd: {}", e);
+    if let Err(_) = env::set_current_dir(&path) {
+        eprintln!("cd: no matches found: {}",target );
     }
 }
