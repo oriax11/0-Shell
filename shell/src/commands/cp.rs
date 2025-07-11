@@ -13,15 +13,15 @@ pub fn execute(args: &[&str]) {
     //         eprintln!("cp: {}", e);
     //     }
     // }
-
-    if args.len() < 2 {
+    let cleaned :Vec<&str> = args.iter().map(|w| w.trim()).filter(|w| !w.is_empty()).collect();
+    // println!("{:?}", cleaned);
+    if cleaned.len() < 2 {
         eprintln!("cp: missing operand");
-        eprintln!("usage: cp <source> <destination>");
         return;
     }
 
-    let src = args[0];
-    let dest = args[1];
+    let src = cleaned[0];
+    let dest = cleaned[1];
 
     let src_path = Path::new(src);
     let dest_path = Path::new(dest);
