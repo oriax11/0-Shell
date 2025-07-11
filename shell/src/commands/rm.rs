@@ -4,8 +4,8 @@ use std::path::PathBuf;
 pub fn execute(args: &[&str]) {
     let mut recursive = false;
     let mut paths = Vec::new();
-
-    for arg in args {
+    let cleaned: Vec<&str> = args.iter().map(|w| w.trim()).filter(|w| !w.is_empty()).collect();
+    for arg in cleaned.iter() {
         if *arg == "-r" {
             recursive = true;
         } else {
