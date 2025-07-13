@@ -1,10 +1,8 @@
 use std::env;
 use std::path::PathBuf;
 
-pub fn execute(args: &[&str]) {
-    //println!("{:?}", args);
-    let cleaned :Vec<&str> = args.iter().map(|w| w.trim()).filter(|w| !w.is_empty()).collect(); 
-    //println!("{:?}", cleaned);
+pub fn execute(args: &[String]) {
+    let cleaned: Vec<&str> = args.iter().map(|s| s.as_str().trim()).filter(|s| !s.is_empty()).collect();
     let target = cleaned.get(0).unwrap_or(&"~");
     let path = if *target == "~" {
         home::home_dir().unwrap_or_default()

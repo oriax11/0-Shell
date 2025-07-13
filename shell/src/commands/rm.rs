@@ -1,12 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn execute(args: &[&str]) {
+pub fn execute(args: &[String]) {
     let mut recursive = false;
+    let mut force = false;
     let mut paths = Vec::new();
 
     let cleaned: Vec<&str> = args
         .iter()
+        .map(|s| s.as_str())
         .map(|w| w.trim())
         .filter(|w| !w.is_empty())
         .collect();
@@ -14,6 +16,8 @@ pub fn execute(args: &[&str]) {
     for arg in cleaned.iter() {
         if *arg == "-r" || *arg == "-R" {
             recursive = true;
+        } else if *arg == "-f" {
+            force = true;
         } else {
             paths.push(arg);
         }
@@ -43,12 +47,16 @@ pub fn execute(args: &[&str]) {
                 if metadata.file_type().is_symlink() {
                     // Delete the symlink itself, not the target
                     if let Err(e) = fs::remove_file(path) {
-                        eprintln!("rm: {}: {}", path_str, e);
+                        if !force {
+                            eprintln!("rm: {}: {}", path_str, e);
+                        }
                     }
                 } else if metadata.is_dir() {
                     if recursive {
                         if let Err(e) = fs::remove_dir_all(path) {
-                            eprintln!("rm: {}: {}", path_str, e);
+                            if !force {
+                                eprintln!("rm: {}: {}", path_str, e);
+                            }
                         }
                     } else {
                         eprintln!("rm: cannot remove '{}': Is a directory", path_str);
@@ -56,12 +64,16 @@ pub fn execute(args: &[&str]) {
                 } else {
                     // regular file
                     if let Err(e) = fs::remove_file(path) {
-                        eprintln!("rm: {}: {}", path_str, e);
+                        if !force {
+                            eprintln!("rm: {}: {}", path_str, e);
+                        }
                     }
                 }
             }
             Err(_) => {
-                eprintln!("rm: cannot remove '{}': No such file or directory", path_str);
+                if !force {
+                    eprintln!("rm: cannot remove '{}': No such file or directory", path_str);
+                }
             }
         }
     }

@@ -3,7 +3,7 @@ use std::os::unix::fs::MetadataExt;
 use std::time::UNIX_EPOCH;
 use chrono::{DateTime, Local};
 use libc;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::os::unix::fs::FileTypeExt;
 
 #[derive(PartialEq, Debug)]
@@ -104,20 +104,18 @@ fn permissions_string(metadata: &fs::Metadata, file_type: &FileType) -> String {
 
     perms.push(if (mode & 0o400) != 0 { 'r' } else { '-' });
     perms.push(if (mode & 0o200) != 0 { 'w' } else { '-' });
-    perms.push(if (mode & 0o100) != 0 { 'x' } else { '-' }); // User execute
+    perms.push(if (mode & 0o100) != 0 { 'x' } else { '-' });
     perms.push(if (mode & 0o040) != 0 { 'r' } else { '-' });
     perms.push(if (mode & 0o020) != 0 { 'w' } else { '-' });
-    perms.push(if (mode & 0o010) != 0 { 'x' } else { '-' }); // Group execute
+    perms.push(if (mode & 0o010) != 0 { 'x' } else { '-' });
     perms.push(if (mode & 0o004) != 0 { 'r' } else { '-' });
     perms.push(if (mode & 0o002) != 0 { 'w' } else { '-' });
-    perms.push(if (mode & 0o001) != 0 { 'x' } else { '-' }); // Other execute
+    perms.push(if (mode & 0o001) != 0 { 'x' } else { '-' });
 
-    // Handle SUID, SGID, and sticky bits
     let suid = (mode & 0o4000) != 0;
     let sgid = (mode & 0o2000) != 0;
     let sticky = (mode & 0o1000) != 0;
 
-    // SUID bit for user execute
     if suid {
         if perms.chars().nth(3) == Some('x') {
             perms.replace_range(3..4, "s");
@@ -126,7 +124,6 @@ fn permissions_string(metadata: &fs::Metadata, file_type: &FileType) -> String {
         }
     }
 
-    // SGID bit for group execute
     if sgid {
         if perms.chars().nth(6) == Some('x') {
             perms.replace_range(6..7, "s");
@@ -135,7 +132,6 @@ fn permissions_string(metadata: &fs::Metadata, file_type: &FileType) -> String {
         }
     }
 
-    // Sticky bit for other execute
     if sticky {
         if perms.chars().nth(9) == Some('x') {
             perms.replace_range(9..10, "t");
@@ -154,7 +150,7 @@ fn print_long_listing(info: &EntryInfo, max_nlink_len: usize, max_user_len: usiz
     let user = unsafe {
         let pwuid = libc::getpwuid(info.metadata.uid());
         if pwuid.is_null() {
-            info.metadata.uid().to_string() // Fallback to UID if name not found
+            info.metadata.uid().to_string()
         } else {
             std::ffi::CStr::from_ptr((*pwuid).pw_name)
                 .to_string_lossy()
@@ -165,7 +161,7 @@ fn print_long_listing(info: &EntryInfo, max_nlink_len: usize, max_user_len: usiz
     let group = unsafe {
         let grgid = libc::getgrgid(info.metadata.gid());
         if grgid.is_null() {
-            info.metadata.gid().to_string() // Fallback to GID if name not found
+            info.metadata.gid().to_string()
         } else {
             std::ffi::CStr::from_ptr((*grgid).gr_name)
                 .to_string_lossy()
@@ -179,15 +175,14 @@ fn print_long_listing(info: &EntryInfo, max_nlink_len: usize, max_user_len: usiz
 
     let size_or_rdev_string = if info.file_type == FileType::CharDevice || info.file_type == FileType::BlockDevice {
         let rdev = info.metadata.rdev();
-        let major = (rdev >> 8) & 0xFF; // Common way to get major number
-        let minor = rdev & 0xFF;        // Common way to get minor number
+        let major = (rdev >> 8) & 0xFF;
+        let minor = rdev & 0xFF;
         format!("{}, {}", major, minor)
     } else {
         info.metadata.len().to_string()
     };
 
     let mut final_name = info.name.clone();
-    // Only append indicator for non-symlinks, as symlinks get " -> target"
     if let Some(c) = indicator_char(&info.indicator) {
         if !matches!(info.file_type, FileType::Symlink(_)) {
             final_name.push(c);
@@ -216,11 +211,11 @@ fn print_long_listing(info: &EntryInfo, max_nlink_len: usize, max_user_len: usiz
     }
 }
 
-pub fn execute(args: &[&str]) {
+pub fn execute(args: &[String]) {
     let (flags, mut paths) = parse_flags(args);
 
     if paths.is_empty() {
-        paths.push(".");
+        paths.push(String::from("."));
     }
 
     for path_str in &paths {
@@ -228,13 +223,11 @@ pub fn execute(args: &[&str]) {
             println!("{}:", path_str);
         }
 
-        let path = Path::new(path_str);
+        let path = Path::new(path_str.as_str());
         
         let mut entries_info = Vec::new();
 
-        // --- Handle '.' and '..' first if '-a' is present ---
         if flags.contains(&'a') {
-            // Handle '.'
             if let Ok(metadata) = fs::symlink_metadata(path) {
                 let file_type = FileType::from_path(path);
                 let indicator = file_indicator(&file_type);
@@ -246,7 +239,6 @@ pub fn execute(args: &[&str]) {
                 });
             }
 
-            // Handle '..'
             if let Some(parent_path) = path.parent() {
                  if let Ok(metadata) = fs::symlink_metadata(parent_path) {
                     let file_type = FileType::from_path(parent_path);
@@ -258,7 +250,7 @@ pub fn execute(args: &[&str]) {
                         indicator,
                     });
                 }
-            } else if path.as_os_str() == "/" { // For root directory, '..' is '/' itself
+            } else if path.as_os_str() == "/" {
                 if let Ok(metadata) = fs::symlink_metadata(path) {
                     let file_type = FileType::from_path(path);
                     let indicator = file_indicator(&file_type);
@@ -271,8 +263,6 @@ pub fn execute(args: &[&str]) {
                 }
             }
         }
-        // --- End handling '.' and '..' ---
-
 
         let entries = match fs::read_dir(path) {
             Ok(e) => e,
@@ -284,12 +274,10 @@ pub fn execute(args: &[&str]) {
 
         for entry in entries.flatten() {
             let file_name = entry.file_name().to_string_lossy().to_string();
-            // Skip '.' and '..' here, as we already explicitly added them if '-a'
             if file_name == "." || file_name == ".." {
                 continue;
             }
 
-            // Original hidden file logic
             if !flags.contains(&'a') && file_name.starts_with('.') {
                 continue;
             }
@@ -308,7 +296,6 @@ pub fn execute(args: &[&str]) {
             }
         }
 
-        // Custom sorting: '.' then '..', then alphabetical for the rest.
         entries_info.sort_by(|a, b| {
             match (a.name.as_str(), b.name.as_str()) {
                 (".", "..") => std::cmp::Ordering::Less,
@@ -323,9 +310,8 @@ pub fn execute(args: &[&str]) {
 
         if flags.contains(&'l') {
             let total_blocks: u64 = entries_info.iter().map(|info| info.metadata.blocks()).sum();
-            println!("total {}", total_blocks / 2); // ls typically uses 1KB blocks for 'total'
+            println!("total {}", total_blocks / 2);
 
-            // Calculate max widths for alignment
             let mut max_nlink_len = 0;
             let mut max_user_len = 0;
             let mut max_group_len = 0;
@@ -357,14 +343,12 @@ pub fn execute(args: &[&str]) {
                 max_size_or_dev_len = max_size_or_dev_len.max(size_or_rdev_string_len);
             }
 
-            // Ensure a minimum width for size/device numbers (common ls behavior)
-            max_size_or_dev_len = max_size_or_dev_len.max(8); 
+            max_size_or_dev_len = max_size_or_dev_len.max(8);
 
             for info in &entries_info {
                 print_long_listing(info, max_nlink_len, max_user_len, max_group_len, max_size_or_dev_len);
             }
         } else {
-            // Simplified display for non-long listing, still respecting indicators
             for info in entries_info {
                 let mut display_name = info.name.clone();
                 if let Some(c) = indicator_char(&info.indicator) {
@@ -376,18 +360,18 @@ pub fn execute(args: &[&str]) {
                     display_name.push_str(" -> ");
                     display_name.push_str(target);
                 }
-                print!("{}  ", display_name);
+                print!("{}. ", display_name);
             }
             println!();
         }
     }
 }
 
-fn parse_flags<'a>(args: &'a [&str]) -> (Vec<char>, Vec<&'a str>) {
+fn parse_flags(args: &[String]) -> (Vec<char>, Vec<String>) {
     let mut flags = Vec::new();
     let mut paths = Vec::new();
 
-    for arg in args.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    for arg in args.iter().filter(|s| !s.trim().is_empty()) {
         if arg.starts_with('-') {
             for c in arg.chars().skip(1) {
                 if !flags.contains(&c) {
@@ -395,7 +379,7 @@ fn parse_flags<'a>(args: &'a [&str]) -> (Vec<char>, Vec<&'a str>) {
                 }
             }
         } else {
-            paths.push(arg);
+            paths.push(arg.clone());
         }
     }
 
