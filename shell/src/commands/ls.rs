@@ -41,10 +41,13 @@ pub fn execute(rest: &[String]) {
             }
         };
 
-        if flags.contains(&'a') {
+        if flags.contains(&'a') && flags.contains(&'F') {
+            names.push("./".to_string());
+            names.push("../".to_string());
+        }else if flags.contains(&'a') {
             names.push(".".to_string());
             names.push("..".to_string());
-        }
+        }  
 
         for entry in entries {
             if let Ok(entry) = entry {

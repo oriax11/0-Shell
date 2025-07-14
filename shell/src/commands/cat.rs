@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{ self, Read };
+use std::io::{ self};
 
 pub fn execute(args: &[String]) {
     if args.is_empty() {
