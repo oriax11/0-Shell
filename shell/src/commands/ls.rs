@@ -1,10 +1,10 @@
 use std::fs;
-use std::os::unix::fs::{MetadataExt, FileTypeExt};
+use std::os::unix::fs::{ MetadataExt, FileTypeExt };
 use std::time::UNIX_EPOCH;
-use chrono::{DateTime, Local};
+use chrono::{ DateTime, Local };
 use std::path::Path;
 use std::ffi::CStr;
-use libc::{getpwuid, getgrgid};
+use libc::{ getpwuid, getgrgid };
 
 fn parse_flags(args: &[String]) -> (Vec<char>, Vec<String>) {
     let mut flags = Vec::new();
@@ -44,10 +44,10 @@ pub fn execute(rest: &[String]) {
         if flags.contains(&'a') && flags.contains(&'F') {
             names.push("./".to_string());
             names.push("../".to_string());
-        }else if flags.contains(&'a') {
+        } else if flags.contains(&'a') {
             names.push(".".to_string());
             names.push("..".to_string());
-        }  
+        }
 
         for entry in entries {
             if let Ok(entry) = entry {
@@ -66,7 +66,7 @@ pub fn execute(rest: &[String]) {
                             display_name.push('/');
                         } else if ftype.is_symlink() {
                             display_name.push('@');
-                        } else if meta.mode() & 0o111 != 0 {
+                        } else if (meta.mode() & 0o111) != 0 {
                             display_name.push('*');
                         }
                     }
@@ -89,11 +89,23 @@ pub fn execute(rest: &[String]) {
 
             println!("total {}", total_blocks);
 
-            for name in &names {
-                let full_path = Path::new(&path).join(name);
+            for  name in &names {
+                let mut tmp_name = name.clone();
+                if flags.contains(&'F') {
+                    if let Some(last) = name.chars().last() {
+                        if last == '@' || last == '*' || last == '/' {
+                            tmp_name.pop();
+                        }
+                    }
+                }
+
+                let full_path = Path::new(&path).join(tmp_name);
                 let metadata = match fs::symlink_metadata(&full_path) {
                     Ok(m) => m,
-                    Err(_) => continue,
+                    Err(e) => {
+                        println!("{:?} {}",e, name);
+                        continue;
+                    }
                 };
 
                 let file_type = metadata.file_type();
@@ -118,6 +130,7 @@ pub fn execute(rest: &[String]) {
                 } else {
                     format!("{}", metadata.len())
                 };
+
 
                 let mtime = metadata.modified().unwrap_or(UNIX_EPOCH);
                 let datetime: DateTime<Local> = mtime.into();
