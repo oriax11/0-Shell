@@ -1,205 +1,341 @@
-use std::fs;
-use std::os::unix::fs::{ MetadataExt, FileTypeExt };
-use std::time::UNIX_EPOCH;
-use chrono::{ DateTime, Local };
-use std::path::Path;
-use std::ffi::CStr;
-use libc::{ getpwuid, getgrgid };
+pub use chrono::{DateTime, Local};
+use libc;
+use std::ffi::CString;
+pub use std::fs::{self};
+pub use std::io;
+pub use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+pub use users::{get_group_by_gid, get_user_by_uid};
 
-fn parse_flags(args: &[String]) -> (Vec<char>, Vec<String>) {
-    let mut flags = Vec::new();
-    let mut paths = Vec::new();
-    for arg in args {
-        if arg.starts_with('-') {
-            for c in arg.chars().skip(1) {
-                flags.push(c);
-            }
-        } else {
-            paths.push(arg.clone());
-        }
-    }
-    (flags, paths)
+#[derive(Debug)]
+struct Options {
+    long: bool,
+    all: bool,
+    classify: bool,
+    paths: Vec<String>,
 }
 
-pub fn execute(rest: &[String]) {
-    let (flags, mut paths) = parse_flags(rest);
-    if paths.is_empty() {
-        paths.push(".".to_string());
-    }
-
-    for path in &paths {
-        if paths.len() > 1 {
-            println!("{}:", path);
+fn parse_args(args: &[String]) -> Options {
+    let mut opts = Options {
+        long: false,
+        all: false,
+        classify: false,
+        paths: vec![],
+    };
+    for arg in args {
+        if arg.starts_with('-') {
+            for ch in arg.chars().skip(1) {
+                match ch {
+                    'l' => opts.long = true,
+                    'a' => opts.all = true,
+                    'F' => opts.classify = true,
+                    _ => eprintln!("ls: unknown flag -{}", ch),
+                }
+            }
+        } else {
+            opts.paths.push(arg.clone());
         }
+    }
+    if opts.paths.is_empty() {
+        opts.paths.push(".".to_string());
+    }
+    opts
+}
 
-        let mut names = Vec::new();
-        let entries = match fs::read_dir(&path) {
-            Ok(e) => e,
-            Err(_) => {
-                eprintln!("ls: cannot access '{}': No such file or directory", path);
+pub fn execute(args: &[String]) {
+    let opts = parse_args(args);
+    let multiple = opts.paths.len() > 1;
+
+    for (i, path) in opts.paths.iter().enumerate() {
+        let pathbuf = PathBuf::from(path);
+        let meta = match fs::symlink_metadata(&pathbuf) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("ls: cannot access '{}': {}", path, e);
                 continue;
             }
         };
 
-        if flags.contains(&'a') && flags.contains(&'F') {
-            names.push("./".to_string());
-            names.push("../".to_string());
-        } else if flags.contains(&'a') {
-            names.push(".".to_string());
-            names.push("..".to_string());
-        }
-
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let file_name = entry.file_name().to_string_lossy().to_string();
-                if !flags.contains(&'a') && file_name.starts_with('.') {
+        if meta.is_dir() {
+            if multiple {
+                println!("{}:", path);
+            }
+            let entries = match read_entries(&pathbuf, opts.all) {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("ls: cannot read directory '{}': {}", path, e);
                     continue;
                 }
+            };
 
-                let mut display_name = file_name.clone();
-                let full_path = Path::new(&path).join(&file_name);
+            let mut entries: Vec<PathBuf> = entries;
+            entries.sort_by(|a, b| {
+                let a_tail = Path::new(a)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                let b_tail = Path::new(b)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
 
-                if flags.contains(&'F') {
-                    if let Ok(meta) = fs::symlink_metadata(&full_path) {
-                        let ftype = meta.file_type();
-                        if ftype.is_dir() {
-                            display_name.push('/');
-                        } else if ftype.is_symlink() {
-                            display_name.push('@');
-                        } else if (meta.mode() & 0o111) != 0 {
-                            display_name.push('*');
-                        }
-                    }
+                match (a_tail, b_tail) {
+                    (".", ".") | ("..", "..") => std::cmp::Ordering::Equal,
+                    (".", _) => std::cmp::Ordering::Less,
+                    (_, ".") => std::cmp::Ordering::Greater,
+                    ("..", _) => std::cmp::Ordering::Less,
+                    (_, "..") => std::cmp::Ordering::Greater,
+                    _ => a.cmp(b),
                 }
+            });
 
-                names.push(display_name);
-            }
-        }
+            if opts.long {
+                let total_blocks: u64 = entries
+                    .iter()
+                    .map(|entry| {
+                        fs::symlink_metadata(entry.as_path())
+                            .map(|m| m.blocks())
+                            .unwrap_or(0)
+                    })
+                    .sum();
+                println!("total {}", total_blocks / 2);
 
-        names.sort();
-
-        if flags.contains(&'l') {
-            let mut total_blocks = 0;
-            for name in &names {
-                let full_path = Path::new(&path).join(name);
-                if let Ok(metadata) = fs::symlink_metadata(&full_path) {
-                    total_blocks += metadata.blocks();
+                if let Err(e) = print_long(&entries, &opts) {
+                    eprintln!("ls: error printing long format: {}", e);
                 }
-            }
-
-            println!("total {}", total_blocks);
-
-            for  name in &names {
-                let mut tmp_name = name.clone();
-                if flags.contains(&'F') {
-                    if let Some(last) = name.chars().last() {
-                        if last == '@' || last == '*' || last == '/' {
-                            tmp_name.pop();
-                        }
+            } else {
+                for entry in &entries {
+                    let mut name = entry
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if entry.ends_with("/.") {
+                        name = ".".to_string();
+                    } else if entry.ends_with("/..") {
+                        name = "..".to_string();
                     }
+                    if opts.classify {
+                        name = format!("{}{}", name, classify_suffix(entry));
+                    }
+                    println!("{}", name);
                 }
-
-                let full_path = Path::new(&path).join(tmp_name);
-                let metadata = match fs::symlink_metadata(&full_path) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        println!("{:?} {}",e, name);
-                        continue;
-                    }
-                };
-
-                let file_type = metadata.file_type();
-
-                let perms = if file_type.is_symlink() {
-                    "l".to_string() + &permissions_string(&metadata)[1..]
-                } else if file_type.is_dir() {
-                    "d".to_string() + &permissions_string(&metadata)[1..]
-                } else {
-                    permissions_string(&metadata)
-                };
-
-                let nlink = metadata.nlink();
-                let user = get_username(metadata.uid());
-                let group = get_groupname(metadata.gid());
-
-                let size_display = if file_type.is_char_device() || file_type.is_block_device() {
-                    let rdev = metadata.rdev();
-                    let major = ((rdev >> 8) & 0xfff) as u32;
-                    let minor = ((rdev & 0xff) | ((rdev >> 12) & 0xfff00)) as u32;
-                    format!("{}, {}", major, minor)
-                } else {
-                    format!("{}", metadata.len())
-                };
-
-
-                let mtime = metadata.modified().unwrap_or(UNIX_EPOCH);
-                let datetime: DateTime<Local> = mtime.into();
-                let date = datetime.format("%b %d %H:%M");
-
-                let mut display_name = name.clone();
-                if file_type.is_symlink() {
-                    if let Ok(target) = fs::read_link(&full_path) {
-                        display_name = format!("{} -> {}", name, target.to_string_lossy());
-                    }
-                }
-
-                println!(
-                    "{} {:>2} {:<8} {:<8} {:>8} {} {}",
-                    perms,
-                    nlink,
-                    user,
-                    group,
-                    size_display,
-                    date,
-                    display_name
-                );
             }
         } else {
-            println!("{}", names.join("  "));
+            if opts.long {
+                if let Err(e) = print_long(&[pathbuf.clone()], &opts) {
+                    eprintln!("ls: error printing long format: {}", e);
+                }
+            } else {
+                let mut name = pathbuf
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if pathbuf.to_str() == Some("./.") {
+                    name = ".".to_string();
+                } else if pathbuf.to_str() == Some("./..") {
+                    name = "..".to_string();
+                }
+                if opts.classify {
+                    name = format!("{}{}", name, classify_suffix(&pathbuf));
+                }
+                println!("{}", name);
+            }
+        }
+
+        if i != opts.paths.len() - 1 {
+            println!();
         }
     }
 }
 
-fn permissions_string(metadata: &fs::Metadata) -> String {
-    let mut perms = String::new();
-    let mode = metadata.mode();
-    perms.push('-');
-    perms.push(if (mode & 0o400) != 0 { 'r' } else { '-' });
-    perms.push(if (mode & 0o200) != 0 { 'w' } else { '-' });
-    perms.push(if (mode & 0o100) != 0 { 'x' } else { '-' });
-    perms.push(if (mode & 0o040) != 0 { 'r' } else { '-' });
-    perms.push(if (mode & 0o020) != 0 { 'w' } else { '-' });
-    perms.push(if (mode & 0o010) != 0 { 'x' } else { '-' });
-    perms.push(if (mode & 0o004) != 0 { 'r' } else { '-' });
-    perms.push(if (mode & 0o002) != 0 { 'w' } else { '-' });
-    perms.push(if (mode & 0o001) != 0 { 'x' } else { '-' });
-    perms
+fn read_entries(dir: &Path, show_all: bool) -> io::Result<Vec<PathBuf>> {
+    let mut entries = Vec::new();
+
+    if show_all {
+        entries.push(dir.join("."));
+        entries.push(dir.join(".."));
+    }
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if !show_all && name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        entries.push(entry.path());
+    }
+    Ok(entries)
 }
 
-fn get_username(uid: u32) -> String {
-    unsafe {
-        let pw = getpwuid(uid);
-        if pw.is_null() {
-            return "unknown".into();
+fn print_long(entries: &[PathBuf], opts: &Options) -> io::Result<()> {
+    let mut widths = Widths::default();
+    let mut info = Vec::new();
+    for path in entries {
+        let meta = fs::symlink_metadata(&path)?;
+        let nlink = meta.nlink();
+        let uid = meta.uid();
+        let gid = meta.gid();
+        let uname = get_user_by_uid(uid)
+            .map(|u| u.name().to_string_lossy().to_string())
+            .unwrap_or(uid.to_string());
+        let gname = get_group_by_gid(gid)
+            .map(|g| g.name().to_string_lossy().to_string())
+            .unwrap_or(gid.to_string());
+
+        let is_device = meta.file_type().is_block_device() || meta.file_type().is_char_device();
+        let size_str = if is_device {
+            let rdev = meta.rdev();
+            let major = (rdev >> 8) & 0xfff;
+            let minor = (rdev & 0xff) | ((rdev >> 12) & 0xfff00);
+            format!("{}, {}", major, minor)
+        } else {
+            meta.size().to_string()
+        };
+
+        widths.links = widths.links.max(nlink.to_string().len());
+        widths.uname = widths.uname.max(uname.len());
+        widths.gname = widths.gname.max(gname.len());
+        widths.size = widths.size.max(size_str.len());
+
+        info.push((path.clone(), meta, uname, gname, size_str));
+    }
+
+    for (path, meta, uname, gname, size_str) in info {
+        let ftype = meta.file_type();
+        let perm = meta.permissions().mode();
+        let datetime_local: DateTime<Local> = DateTime::<Local>::from(meta.modified()?);
+        let datetime = datetime_local.format("%b %e %H:%M");
+        let mut name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        if path.to_string_lossy().ends_with("/.") {
+            name = ".".to_string();
+        } else if path.ends_with("..") {
+            name = "..".to_string();
         }
-        let name_ptr = (*pw).pw_name;
-        if name_ptr.is_null() {
-            return "unknown".into();
+
+        let mut symlink = if ftype.is_symlink() {
+            match fs::read_link(&path) {
+                Ok(target) => format!(" -> {}", target.to_string_lossy()),
+                Err(_) => "".to_string(),
+            }
+        } else {
+            "".to_string()
+        };
+        if opts.classify {
+            symlink = format!("{}{}", symlink, classify_suffix(&path));
         }
-        CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
+        let mut mode = format_mode(perm, &ftype);
+        let plus_perm = has_extended_attributes(&path.to_string_lossy());
+        if plus_perm {
+            mode.push('+');
+        } else {
+            mode.push(' ');
+        }
+        print!(
+            "{} {:>width_links$} {:<width_uname$} {:<width_gname$} {:>width_size$} {} {}{}\n",
+            mode,
+            meta.nlink(),
+            uname,
+            gname,
+            size_str,
+            datetime,
+            name,
+            symlink,
+            width_links = widths.links,
+            width_uname = widths.uname,
+            width_gname = widths.gname,
+            width_size = widths.size
+        );
+    }
+    Ok(())
+}
+
+fn has_extended_attributes(path: &str) -> bool {
+    let c_path = CString::new(path);
+    match c_path {
+        Ok(c_path) => unsafe {
+            let size = libc::listxattr(c_path.as_ptr(), std::ptr::null_mut(), 0);
+            return size > 0;
+        },
+        Err(_) => {
+            eprintln!("ls: invalid path: {}", path);
+            return false;
+        }
     }
 }
 
-fn get_groupname(gid: u32) -> String {
-    unsafe {
-        let gr = getgrgid(gid);
-        if gr.is_null() {
-            return "unknown".into();
+fn classify_suffix(path: &Path) -> &'static str {
+    match fs::metadata(path) {
+        Ok(meta) => {
+            let ftype = meta.file_type();
+            if ftype.is_dir() {
+                "/"
+            } else if ftype.is_symlink() {
+                "@"
+            } else if ftype.is_fifo() {
+                "|"
+            } else if ftype.is_socket() {
+                "="
+            } else if ftype.is_file() {
+                if (meta.permissions().mode() & 0o111) != 0 {
+                    "*"
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            }
         }
-        let name_ptr = (*gr).gr_name;
-        if name_ptr.is_null() {
-            return "unknown".into();
-        }
-        CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
+        Err(_) => "",
     }
+}
+
+#[derive(Default)]
+struct Widths {
+    links: usize,
+    uname: usize,
+    gname: usize,
+    size: usize,
+}
+
+fn format_mode(mode: u32, ftype: &fs::FileType) -> String {
+    let file_type = if ftype.is_dir() {
+        'd'
+    } else if ftype.is_symlink() {
+        'l'
+    } else if ftype.is_fifo() {
+        'p'
+    } else if ftype.is_socket() {
+        's'
+    } else if ftype.is_char_device() {
+        'c'
+    } else if ftype.is_block_device() {
+        'b'
+    } else {
+        '-'
+    };
+
+    let perms = [
+        (0o400, 'r'),
+        (0o200, 'w'),
+        (0o100, 'x'),
+        (0o040, 'r'),
+        (0o020, 'w'),
+        (0o010, 'x'),
+        (0o004, 'r'),
+        (0o002, 'w'),
+        (0o001, 'x'),
+    ];
+
+    let mut result = String::with_capacity(10);
+    result.push(file_type);
+    for (bit, ch) in perms.iter() {
+        result.push(if (mode & bit) != 0 { *ch } else { '-' });
+    }
+    result
 }
