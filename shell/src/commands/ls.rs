@@ -1,11 +1,11 @@
-pub use chrono::{DateTime, Local};
+pub use chrono::{ DateTime, Local };
 use libc;
 use std::ffi::CString;
-pub use std::fs::{self};
+pub use std::fs::{ self };
 pub use std::io;
-pub use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
-use std::path::{Path, PathBuf};
-pub use users::{get_group_by_gid, get_user_by_uid};
+pub use std::os::unix::fs::{ FileTypeExt, MetadataExt, PermissionsExt };
+use std::path::{ Path, PathBuf };
+pub use users::{ get_group_by_gid, get_user_by_uid };
 
 #[derive(Debug)]
 struct Options {
@@ -26,9 +26,15 @@ fn parse_args(args: &[String]) -> Options {
         if arg.starts_with('-') {
             for ch in arg.chars().skip(1) {
                 match ch {
-                    'l' => opts.long = true,
-                    'a' => opts.all = true,
-                    'F' => opts.classify = true,
+                    'l' => {
+                        opts.long = true;
+                    }
+                    'a' => {
+                        opts.all = true;
+                    }
+                    'F' => {
+                        opts.classify = true;
+                    }
                     _ => eprintln!("ls: unknown flag -{}", ch),
                 }
             }
@@ -261,7 +267,7 @@ fn has_extended_attributes(path: &str) -> bool {
         Ok(c_path) => unsafe {
             let size = libc::listxattr(c_path.as_ptr(), std::ptr::null_mut(), 0);
             return size > 0;
-        },
+        }
         Err(_) => {
             eprintln!("ls: invalid path: {}", path);
             return false;
@@ -282,11 +288,7 @@ fn classify_suffix(path: &Path) -> &'static str {
             } else if ftype.is_socket() {
                 "="
             } else if ftype.is_file() {
-                if (meta.permissions().mode() & 0o111) != 0 {
-                    "*"
-                } else {
-                    ""
-                }
+                if (meta.permissions().mode() & 0o111) != 0 { "*" } else { "" }
             } else {
                 ""
             }
