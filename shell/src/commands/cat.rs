@@ -16,6 +16,7 @@ pub fn execute(args: &[String]) {
 
                 print!("{}", input);
             }
+            return;
     }
 
     for arg in args {

@@ -116,9 +116,10 @@ pub fn execute(args: &[String]) {
                         .and_then(|s| s.to_str())
                         .unwrap_or("")
                         .to_string();
-                    if entry.ends_with("/.") {
+                    let entry_str = entry.to_string_lossy();
+                    if entry_str.ends_with("/.") {
                         name = ".".to_string();
-                    } else if entry.ends_with("/..") {
+                    } else if entry_str.ends_with("/..") {
                         name = "..".to_string();
                     }
                     if opts.classify {
@@ -138,9 +139,10 @@ pub fn execute(args: &[String]) {
                     .and_then(|s| s.to_str())
                     .unwrap_or("")
                     .to_string();
-                if pathbuf.to_str() == Some("./.") {
+                let path_str = pathbuf.to_string_lossy();
+                if path_str.ends_with("/.") || path_str == "." {
                     name = ".".to_string();
-                } else if pathbuf.to_str() == Some("./..") {
+                } else if path_str.ends_with("/..") || path_str == ".." {
                     name = "..".to_string();
                 }
                 if opts.classify {
@@ -218,9 +220,10 @@ fn print_long(entries: &[PathBuf], opts: &Options) -> io::Result<()> {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
-        if path.to_string_lossy().ends_with("/.") {
+        let path_str = path.to_string_lossy();
+        if path_str.ends_with("/.") {
             name = ".".to_string();
-        } else if path.ends_with("..") {
+        } else if path_str.ends_with("/..") {
             name = "..".to_string();
         }
 
@@ -276,13 +279,13 @@ fn has_extended_attributes(path: &str) -> bool {
 }
 
 fn classify_suffix(path: &Path) -> &'static str {
-    match fs::metadata(path) {
+    match fs::symlink_metadata(path) {
         Ok(meta) => {
             let ftype = meta.file_type();
-            if ftype.is_dir() {
-                "/"
-            } else if ftype.is_symlink() {
+            if ftype.is_symlink() {
                 "@"
+            } else if ftype.is_dir() {
+                "/"
             } else if ftype.is_fifo() {
                 "|"
             } else if ftype.is_socket() {

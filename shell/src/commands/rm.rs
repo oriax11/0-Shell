@@ -80,17 +80,53 @@ pub fn execute(args: &[String]) {
 }
 
 fn normalize_path(path: &Path) -> PathBuf {
-    let mut clean = PathBuf::new();
+    use std::path::Component;
+
+    let mut components = Vec::new();
     for component in path.components() {
-        clean.push(component);
+        match component {
+            Component::CurDir => {
+                // Skip current directory markers
+            }
+            Component::ParentDir => {
+                // Go up one level if possible
+                if !components.is_empty() {
+                    components.pop();
+                }
+            }
+            comp => components.push(comp),
+        }
     }
-    clean
+
+    let mut normalized = PathBuf::new();
+    for comp in components {
+        normalized.push(comp);
+    }
+
+    // If path was absolute and we have components, ensure it starts from root
+    if path.is_absolute() && normalized.components().next().is_none() {
+        normalized.push("/");
+    }
+
+    normalized
 }
 
 fn is_dangerous_path(path: &Path) -> bool {
-    match path.to_string_lossy().as_ref() {
-        "." | ".." => true,
-        s if s.ends_with("/.") || s.ends_with("/..") => true,
-        _ => false,
+    use std::path::Component;
+
+    // Check if path is exactly "." or ".."
+    let path_str = path.to_string_lossy();
+    if path_str == "." || path_str == ".." {
+        return true;
     }
+
+    // Check if any component is exactly "." or ".."
+    for component in path.components() {
+        match component {
+            Component::CurDir | Component::ParentDir => return true,
+            _ => {}
+        }
+    }
+
+    false
 }
