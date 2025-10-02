@@ -1,5 +1,6 @@
 use std::io::{ self, Write };
 use std::env;
+use std::path::PathBuf;
 use std::process::Command;
 
 mod commands;
@@ -91,9 +92,8 @@ fn main() {
     loop {
         let current_dir = match env::current_dir() {
             Ok(path) => path,
-            Err(e) => {
-                eprintln!("Error getting current directory: {}", e);
-                continue;
+            Err(_) => {
+                PathBuf::from("/")
             }
         };
         let home_dir = home::home_dir().unwrap_or_default(); // home_dir() can return None, but unwrap_or_default() is fine here
